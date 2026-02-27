@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  useMapEvents
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import L from "leaflet";
+import * as L from "leaflet";
 import { initializeApp } from "firebase/app";
 import {
   getDatabase,
@@ -13,7 +19,7 @@ import {
   remove
 } from "firebase/database";
 
-// --------------- Firebase config ---------------
+// --- Firebase config ---
 const firebaseConfig = {
   apiKey: "AIzaSyAlxzHxukmQx4icJ899NOkmNPauhBfz-fo",
   authDomain: "dpsvrn-3ac57.firebaseapp.com",
@@ -29,11 +35,11 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const markersRef = ref(db, "markers");
 
-// ----------- Лимиты ---------
+// Лимиты
 const LIMIT = 3; // 3 метки
 const WINDOW = 10 * 60 * 1000; // 10 минут в мс
 
-// ------- Отрисовка на карте -------
+// Кастомизация marker-иконки, чтобы не было багов на vite+leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -56,14 +62,14 @@ type MarkerData = {
 
 function AddMarker({ onAdd }: { onAdd: (latlng: { lat: number; lng: number }) => void }) {
   useMapEvents({
-    click(e) {
+    click(e: any) {
       onAdd(e.latlng);
     }
   });
   return null;
 }
 
-const tileLayers = {
+const tileLayers: Record<string, { url: string; attribution: string }> = {
   light: {
     url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     attribution: "&copy; OpenStreetMap contributors"
@@ -80,7 +86,6 @@ const headerFooterStyle: React.CSSProperties = {
   transition: "background 0.3s, color 0.3s"
 };
 
-// ----- Локальный лимит для marker
 function getMarkerTimes(userId: number): number[] {
   const data = localStorage.getItem('markerTimes-' + userId);
   return data ? JSON.parse(data) : [];
@@ -98,7 +103,7 @@ export default function App() {
     const tg = window.Telegram?.WebApp;
     if (tg && tg.initDataUnsafe?.user) {
       setTgUser(tg.initDataUnsafe.user);
-      tg.ready();
+      tg.ready?.();
       tg.expand?.();
     }
   }, []);
@@ -112,8 +117,8 @@ export default function App() {
 
   // Подписка на базу
   useEffect(() => {
-    onValue(markersRef, (snapshot) => {
-      const dbMarkers = snapshot.val() || {};
+    onValue(markersRef, (snapshot: any) => {
+      const dbMarkers = (snapshot.val() as any) || {};
       const result: MarkerData[] = Object.entries(dbMarkers).map(([key, value]: any) => ({
         key,
         ...(value as Omit<MarkerData, "key">)
@@ -123,7 +128,7 @@ export default function App() {
       // автоматическое удаление старых меток (старше 2 часов)
       const now = Date.now();
       for (const [key, value] of Object.entries(dbMarkers)) {
-        if (now - value.timestamp > 2 * 60 * 60 * 1000) {
+        if (now - (value as any).timestamp > 2 * 60 * 60 * 1000) {
           remove(ref(db, `markers/${key}`));
         }
       }
@@ -266,10 +271,14 @@ export default function App() {
           </button>
         </div>
 
-        <MapContainer center={[51.661535, 39.200287]} zoom={12} style={{ height: "80vh", width: "100%" }}>
+        <MapContainer
+          center={[51.661535, 39.200287] as [number, number]}
+          zoom={12}
+          style={{ height: "80vh", width: "100%" }}
+        >
           <TileLayer
             url={tileLayers[theme].url}
-            attribution={tileLayers[theme].attribution}
+            attribution={tileLayers[theme].attribution as any}
           />
           <AddMarker onAdd={tgUser ? handleAddMarker : () => showNotify("Войдите через Telegram!")} />
           {markers.map((marker) => (
@@ -339,7 +348,7 @@ export default function App() {
                 type="text"
                 placeholder="Комментарий..."
                 value={commentInput}
-                onChange={e => setCommentInput(e.target.value)}
+                onChange={e => setCommentInput((e as any).target.value)}
                 autoFocus
               />
               <div style={{ marginTop: 16 }}>
