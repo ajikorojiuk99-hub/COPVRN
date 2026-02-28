@@ -18,6 +18,7 @@ import {
   off,
   remove
 } from "firebase/database";
+import leoProfanity from "leo-profanity";
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -108,6 +109,11 @@ export default function App() {
     }
   }, []);
 
+  // Применим русский словарь для leo-profanity (обязательно!)
+  useEffect(() => {
+    leoProfanity.loadDictionary('ru');
+  }, []);
+
   // Firebase
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
@@ -136,7 +142,7 @@ export default function App() {
     return () => { off(markersRef); };
   }, []);
 
-  // ДЛЯ ОПОВЕЩЕНИЙ (лимит и пр.)
+  // Для уведомлений
   const showNotify = (msg: string) => {
     setNotify(msg);
     setTimeout(() => setNotify(null), 3500);
@@ -152,6 +158,13 @@ export default function App() {
       showNotify("Войдите через Telegram!");
       return;
     }
+
+    // === Фильтрация комментариев (цензура) ===
+    if (leoProfanity.check(commentInput)) {
+      showNotify("Комментарий содержит недопустимые слова.");
+      return;
+    }
+
     // === Лимит 3 метки за 10 минут ===
     let times = getMarkerTimes(tgUser.id);
     const now = Date.now();
@@ -224,6 +237,35 @@ export default function App() {
     );
   }
 
+  // ------- SVG ICONS ---------
+  const SunIcon = (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none"
+      xmlns="http://www.w3.org/2000/svg">
+      <circle cx="13" cy="13" r="5.5" stroke="currentColor" strokeWidth="2"/>
+      <g stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <line x1="13" y1="2" x2="13" y2="6"/>
+        <line x1="13" y1="20" x2="13" y2="24"/>
+        <line x1="2" y1="13" x2="6" y2="13"/>
+        <line x1="20" y1="13" x2="24" y2="13"/>
+        <line x1="5.222" y1="5.222" x2="8.05" y2="8.05"/>
+        <line x1="17.95" y1="17.95" x2="20.778" y2="20.778"/>
+        <line x1="5.222" y1="20.778" x2="8.05" y2="17.95"/>
+        <line x1="17.95" y1="8.05" x2="20.778" y2="5.222"/>
+      </g>
+    </svg>
+  );
+
+  const MoonIcon = (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none"
+      xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M21 17C19.8203 17.5927 18.4311 17.8616 17 17.7222C13.134 17.3426 10 14.2086 10 10.3426C10 8.91158 10.2689 7.52245 10.8616 6.34264C6.93108 7.54233 4 11.1165 4 15.3426C4 19.7607 7.58172 23.3426 12 23.3426C14.5295 23.3426 16.7732 22.1322 18.2222 20.2222C18.0822 18.7912 18.3511 17.4016 19 16.2222Z"
+        stroke="currentColor" strokeWidth="2" fill="none"
+      />
+    </svg>
+  );
+
+
   return (
     <>
       <style>
@@ -264,10 +306,15 @@ export default function App() {
               border: "1px solid #bbb",
               cursor: "pointer",
               fontWeight: "bold",
+              fontSize: 22,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               boxShadow: "0 2px 8px 0 rgba(0,0,0,.05)"
             }}
+            aria-label={theme === "dark" ? "Светлая карта" : "Тёмная карта"}
           >
-            {theme === "dark" ? "Светлая карта" : "Тёмная карта"}
+            {theme === "dark" ? SunIcon : MoonIcon}
           </button>
         </div>
 
