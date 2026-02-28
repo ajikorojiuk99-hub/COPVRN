@@ -16,7 +16,9 @@ import {
   onValue,
   update,
   off,
-  remove
+  remove,
+  set,
+  onDisconnect
 } from "firebase/database";
 import leoProfanity from "leo-profanity";
 
@@ -99,6 +101,10 @@ export default function App() {
   // Telegram Mini App интеграция:
   const [tgUser, setTgUser] = useState<any>(null);
 
+  // --- USERS & ONLINE COUNTS
+  const [usersCount, setUsersCount] = useState(0);
+  const [onlineCount, setOnlineCount] = useState(0);
+
   useEffect(() => {
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
@@ -109,11 +115,48 @@ export default function App() {
     }
   }, []);
 
+  // Добавление пользователя в users
+  useEffect(() => {
+    if (!tgUser) return;
+    const userRef = ref(db, "users/" + tgUser.id);
+    set(userRef, {
+      id: tgUser.id,
+      name: tgUser.first_name,
+      username: tgUser.username || null
+    });
+  }, [tgUser]);
+
+  // Отметка о присутствии (онлайне)
+  useEffect(() => {
+    if (!tgUser) return;
+    const presenceRef = ref(db, "presence/" + tgUser.id);
+    set(presenceRef, true);
+    onDisconnect(presenceRef).remove();
+    return () => {
+      set(presenceRef, null);
+    };
+  }, [tgUser]);
+
+  // Получение количества пользователей и онлайн
+  useEffect(() => {
+    const usersRef = ref(db, "users");
+    onValue(usersRef, snap => {
+      const val = snap.val() || {};
+      setUsersCount(Object.keys(val).length);
+    });
+
+    const presenceRef = ref(db, "presence");
+    onValue(presenceRef, snap => {
+      const val = snap.val() || {};
+      setOnlineCount(Object.keys(val).length);
+    });
+  }, []);
+
   // Применим русский словарь для leo-profanity (обязательно!)
   useEffect(() => {
     leoProfanity.loadDictionary('ru');
   }, []);
-
+  
   // Firebase
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
@@ -213,7 +256,6 @@ export default function App() {
       showNotify("Вы уже подтвердили эту метку!");
       return;
     }
-    // Обновляем метку: увеличиваем confirmCount и добавляем юзера в confirmedBy
     const updateRef = ref(db, `markers/${marker.key}`);
     update(updateRef, {
       confirmCount: (marker.confirmCount || 0) + 1,
@@ -294,7 +336,7 @@ export default function App() {
         >
           Карта ДПС Воронеж
         </div>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 14 }}>
           {tgUser &&
             <span style={{ fontWeight: 'bold', color: "#1976d2" }}>
               👤 {tgUser.first_name || tgUser.username}
@@ -320,6 +362,10 @@ export default function App() {
           >
             {theme === "dark" ? SunIcon : MoonIcon}
           </button>
+          <div style={{ minWidth: 78, marginLeft: 8, textAlign: "left", lineHeight: "1.1" }}>
+            <div style={{ color: "#aaa", fontSize: 13 }}>Всего: {usersCount}</div>
+            <div style={{ color: "#27ae60", fontWeight: "bold", fontSize: 15 }}>Онлайн: {onlineCount}</div>
+          </div>
         </div>
         <MapContainer
           center={[51.661535, 39.200287] as [number, number]}
