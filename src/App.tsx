@@ -125,10 +125,12 @@ export default function App() {
   useEffect(() => {
     onValue(markersRef, (snapshot: any) => {
       const dbMarkers = (snapshot.val() as any) || {};
-      const result: MarkerData[] = Object.entries(dbMarkers).map(([key, value]: any) => ({
-        key,
-        ...(value as Omit<MarkerData, "key">)
-      }));
+      const result: MarkerData[] = Object.entries(dbMarkers).map(
+        ([key, value]: [string, any]) => ({
+          key,
+          ...(value as MarkerData)
+        })
+      );
       setMarkers(result);
 
       // автоматическое удаление старых меток (старше 2 часов)
@@ -139,7 +141,9 @@ export default function App() {
         }
       }
     });
-    return () => { off(markersRef); };
+    return () => {
+      off(markersRef);
+    };
   }, []);
 
   // Для уведомлений
@@ -173,7 +177,9 @@ export default function App() {
       const firstTime = times[0];
       const waitMs = WINDOW - (now - firstTime);
       const waitMin = Math.ceil(waitMs / 60000);
-      showNotify(`Лимит меток исчерпан. Метки восстановятся через ${waitMin} мин.`);
+      showNotify(
+        `Лимит меток исчерпан. Метки восстановятся через ${waitMin} мин.`
+      );
       return;
     }
     times.push(now);
@@ -224,20 +230,7 @@ export default function App() {
     setCommentInput("");
   };
 
-  // Simple Notification component
-  function Notification() {
-    if (!notify) return null;
-    return (
-      <div style={{
-        position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
-        background: "#222e", color: "#fff", padding: "16px 30px", borderRadius: 10,
-        fontWeight: "bold", fontSize: 18, zIndex: 1100, boxShadow: "0 6px 20px #0006",
-        border: "2px solid #fff"
-      }}>{notify}</div>
-    );
-  }
-
-  // ------- SVG ICONS ---------
+  // SVG ICONS
   const SunIcon = (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none"
       xmlns="http://www.w3.org/2000/svg">
@@ -265,6 +258,17 @@ export default function App() {
     </svg>
   );
 
+  function Notification() {
+    if (!notify) return null;
+    return (
+      <div style={{
+        position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
+        background: "#222e", color: "#fff", padding: "16px 30px", borderRadius: 10,
+        fontWeight: "bold", fontSize: 18, zIndex: 1100, boxShadow: "0 6px 20px #0006",
+        border: "2px solid #fff"
+      }}>{notify}</div>
+    );
+  }
 
   return (
     <>
@@ -292,7 +296,7 @@ export default function App() {
         </div>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 8, gap: 8 }}>
           {tgUser &&
-            <span style={{fontWeight: 'bold', color: "#1976d2"}}>
+            <span style={{ fontWeight: 'bold', color: "#1976d2" }}>
               👤 {tgUser.first_name || tgUser.username}
             </span>
           }
@@ -317,7 +321,6 @@ export default function App() {
             {theme === "dark" ? SunIcon : MoonIcon}
           </button>
         </div>
-
         <MapContainer
           center={[51.661535, 39.200287] as [number, number]}
           zoom={12}
@@ -328,7 +331,7 @@ export default function App() {
             attribution={tileLayers[theme].attribution as any}
           />
           <AddMarker onAdd={tgUser ? handleAddMarker : () => showNotify("Войдите через Telegram!")} />
-          {markers.map((marker) => (
+          {markers.map((marker: MarkerData) => (
             <Marker key={marker.key} position={[marker.lat, marker.lng]}>
               <Popup>
                 <b>Комментарий:</b> {marker.comment}<br />
@@ -336,14 +339,17 @@ export default function App() {
                 <small>
                   {marker.creatorName && <>Отправил: {marker.creatorName}<br /></>}
                 </small>
-                <div style={{marginTop: 8}}>
+                <div style={{ marginTop: 8 }}>
                   {tgUser && marker.confirmedBy?.[tgUser.id] ? (
-                    <span style={{color: 'green', fontWeight: 'bold'}}>
+                    <span style={{ color: 'green', fontWeight: 'bold' }}>
                       Вы уже подтвердили 👍
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleConfirmMarker(marker)}
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleConfirmMarker(marker);
+                      }}
                       style={{
                         cursor: "pointer",
                         padding: "3px 10px",
@@ -354,7 +360,7 @@ export default function App() {
                       }}
                     >✅ Подтвердить</button>
                   )}
-                  <span style={{marginLeft: 10, fontWeight: 'bold', color: "#1976d2"}}>
+                  <span style={{ marginLeft: 10, fontWeight: 'bold', color: "#1976d2" }}>
                     {marker.confirmCount}
                   </span>
                 </div>
@@ -363,7 +369,7 @@ export default function App() {
           ))}
         </MapContainer>
         {!!pendingLatLng && (
-          <div 
+          <div
             style={{
               position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
               background: "rgba(0,0,0,0.4)",
@@ -371,8 +377,8 @@ export default function App() {
             }}
             onClick={handleCancel}
           >
-            <div 
-              style={{ 
+            <div
+              style={{
                 background: "white",
                 padding: 24,
                 borderRadius: 10,
@@ -395,7 +401,7 @@ export default function App() {
                 type="text"
                 placeholder="Комментарий..."
                 value={commentInput}
-                onChange={e => setCommentInput((e as any).target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCommentInput(e.target.value)}
                 autoFocus
               />
               <div style={{ marginTop: 16 }}>
