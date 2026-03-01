@@ -4,7 +4,8 @@ import {
   TileLayer,
   Marker,
   Popup,
-  useMapEvents
+  useMapEvents,
+  Polyline as RLPolyline,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import * as L from "leaflet";
@@ -51,6 +52,18 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// МАЛЕНЬКИЙ ЗЕЛЕНЫЙ МАРКЕР для начала "чистого участка"
+const greenStartIcon = L.icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png",
+  iconSize: [12, 20],
+  iconAnchor: [6, 20],
+  popupAnchor: [0, -18],
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  shadowSize: [30, 18],
+  shadowAnchor: [6, 18]
+});
+
 type MarkerData = {
   key: string;
   lat: number;
@@ -64,10 +77,68 @@ type MarkerData = {
   confirmedBy?: { [uid: number]: boolean };
 };
 
-function AddMarker({ onAdd }: { onAdd: (latlng: { lat: number; lng: number }) => void }) {
+type PolylineData = {
+  points: { lat: number; lng: number }[];
+  time: string;
+  createdBy: number;
+  creatorName: string;
+  timestamp: number;
+};
+
+// --- СТИЛИ КНОПОК (единый вид) ---
+const unifiedButtonStyle: React.CSSProperties = {
+  margin: "0 8px 0 0",
+  padding: "8px 16px",
+  borderRadius: 6,
+  fontSize: 16,
+  fontWeight: "bold",
+  background: "#1976d2",
+  color: "#fff",
+  border: "none",
+  cursor: "pointer",
+  boxShadow: "0 2px 7px #e9e9e9",
+  transition: "background 0.15s"
+};
+
+const greenButtonStyle = {
+  ...unifiedButtonStyle,
+  background: "#23b30c",
+  color: "#fff",
+};
+
+const grayButtonStyle = {
+  ...unifiedButtonStyle,
+  background: "#e0e0e0",
+  color: "#222",
+};
+
+// --- Вспом. функции для линий ---
+function getDistance(lat1:number, lng1:number, lat2:number, lng2:number) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2-lat1) * Math.PI / 180, Δλ = (lng2-lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+function isPatrolNearLine(line: PolylineData, dpsMarkers: MarkerData[]) {
+  const RADIUS = 50;
+  return dpsMarkers.some(marker =>
+    line.points.some(pt => getDistance(marker.lat, marker.lng, pt.lat, pt.lng) < RADIUS)
+  );
+}
+function isLineExpired(line: PolylineData) {
+  return Date.now() - line.timestamp > 60 * 60 * 1000;
+}
+
+function MapClickHandler({
+  onMapClick,
+}: {
+  onMapClick: (latlng: { lat: number; lng: number }) => void;
+}) {
   useMapEvents({
     click(e: any) {
-      onAdd(e.latlng);
+      onMapClick(e.latlng);
     }
   });
   return null;
@@ -93,10 +164,7 @@ function setMarkerTimes(userId: number, times: number[]) {
 }
 
 export default function App() {
-  // Splash:
   const [showSplash, setShowSplash] = useState(true);
-
-  // Мобильный флаг для адаптивных стилей
   const isMobile = typeof window !== "undefined" && window.innerWidth < 700;
 
   // Telegram Mini App интеграция:
@@ -116,7 +184,6 @@ export default function App() {
     }
   }, []);
 
-  // Добавление пользователя в users
   useEffect(() => {
     if (!tgUser) return;
     const userRef = ref(db, "users/" + tgUser.id);
@@ -127,7 +194,6 @@ export default function App() {
     });
   }, [tgUser]);
 
-  // Отметка о присутствии (онлайне)
   useEffect(() => {
     if (!tgUser) return;
     const presenceRef = ref(db, "presence/" + tgUser.id);
@@ -138,7 +204,6 @@ export default function App() {
     };
   }, [tgUser]);
 
-  // Получение количества пользователей и онлайн
   useEffect(() => {
     const usersRef = ref(db, "users");
     onValue(usersRef, snap => {
@@ -153,19 +218,23 @@ export default function App() {
     });
   }, []);
 
-  // Применим русский словарь для leo-profanity (обязательно!)
   useEffect(() => {
     leoProfanity.loadDictionary('ru');
   }, []);
-  
-  // Firebase
+
+  // Firebase маркеры
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [commentInput, setCommentInput] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [notify, setNotify] = useState<string | null>(null);
 
-  // Подписка на базу
+  // Polyline ЧИСТЫЙ УЧАСТОК
+  const [mode, setMode] = useState<null | "choose" | "dps" | "clean">(null);
+  const [firstClick, setFirstClick] = useState<{lat: number; lng: number} | null>(null);
+  const [cleanPoints, setCleanPoints] = useState<{lat: number, lng: number}[]>([]);
+  const [polylines, setPolylines] = useState<PolylineData[]>([]);
+
   useEffect(() => {
     onValue(markersRef, (snapshot: any) => {
       const dbMarkers = (snapshot.val() as any) || {};
@@ -190,11 +259,34 @@ export default function App() {
     };
   }, []);
 
-  // Для уведомлений
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPolylines(prev => prev.filter(line => !isLineExpired(line)));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const showNotify = (msg: string) => {
     setNotify(msg);
     setTimeout(() => setNotify(null), 3500);
   };
+
+  function handleMapClick(latlng: {lat: number, lng: number}) {
+    if (mode === null) {
+      setFirstClick(latlng);
+      setMode("choose");
+      return;
+    }
+    if (mode === "clean") {
+      setCleanPoints((prev) => [...prev, latlng]);
+      return;
+    }
+    if (mode === "dps") {
+      setPendingLatLng(latlng);
+      setMode(null);
+      return;
+    }
+  }
 
   const handleAddMarker = (latlng: { lat: number; lng: number }) => {
     setPendingLatLng(latlng);
@@ -206,14 +298,10 @@ export default function App() {
       showNotify("Войдите через Telegram!");
       return;
     }
-
-    // === Фильтрация комментариев (цензура) ===
     if (leoProfanity.check(commentInput)) {
       showNotify("Комментарий содержит недопустимые слова.");
       return;
     }
-
-    // === Лимит 3 метки за 10 минут ===
     let times = getMarkerTimes(tgUser.id);
     const now = Date.now();
     times = times.filter((t: number) => now - t < WINDOW);
@@ -228,7 +316,6 @@ export default function App() {
     }
     times.push(now);
     setMarkerTimes(tgUser.id, times);
-
     if (pendingLatLng && commentInput.trim()) {
       const newMarker = {
         lat: pendingLatLng.lat,
@@ -271,7 +358,34 @@ export default function App() {
   const handleCancel = () => {
     setPendingLatLng(null);
     setCommentInput("");
+    setCleanPoints([]);
+    setMode(null);
+    setFirstClick(null);
   };
+
+  function finishCleanLine() {
+    if (!tgUser) {
+      showNotify("Войдите через Telegram!");
+      return;
+    }
+    if (cleanPoints.length < 2) {
+      showNotify("Укажите хотя бы 2 точки");
+      return;
+    }
+    setPolylines(prev => [
+      ...prev,
+      {
+        points: cleanPoints,
+        time: new Date().toLocaleTimeString(),
+        createdBy: tgUser.id,
+        creatorName: tgUser.first_name,
+        timestamp: Date.now()
+      }
+    ]);
+    setCleanPoints([]);
+    setMode(null);
+    setFirstClick(null);
+  }
 
   const headerFooterStyle: React.CSSProperties = {
     textAlign: "center",
@@ -329,11 +443,9 @@ export default function App() {
     );
   }
 
-  // ------ Splash ------
   if (showSplash) {
     return <SplashScreen onEnd={() => setShowSplash(false)} />;
   }
-  // ------ Splash ------
 
   return (
     <>
@@ -399,7 +511,7 @@ export default function App() {
           </div>
         </div>
         <MapContainer
-          center={[51.661535, 39.200287] as [number, number]}
+          center={[51.661535, 39.200287]}
           zoom={12}
           style={{
             width: "100vw",
@@ -413,7 +525,42 @@ export default function App() {
             url={tileLayers[theme].url}
             attribution={tileLayers[theme].attribution as any}
           />
-          <AddMarker onAdd={tgUser ? handleAddMarker : () => showNotify("Войдите через Telegram!")} />
+          <MapClickHandler onMapClick={handleMapClick} />
+
+          {/* Чистые участки (фильтрация автоматически скрывает старые и с DПС) */}
+          {polylines
+            .filter(line => !isLineExpired(line))
+            .filter(line => !isPatrolNearLine(line, markers))
+            .map((line, i) => (
+              <RLPolyline
+                key={i}
+                positions={line.points.map(pt => [pt.lat, pt.lng])}
+                pathOptions={{ color: "green", weight: 8, opacity: 0.65 }}
+              >
+                <Popup>
+                  Чистый участок<br />
+                  <small>Отправил: {line.creatorName}</small><br />
+                  <small>Время: {line.time}</small>
+                </Popup>
+              </RLPolyline>
+          ))}
+
+          {/* Текущая линия при добавлении */}
+          {mode === "clean" && cleanPoints.length > 0 &&
+            <RLPolyline
+              positions={cleanPoints.map(pt=>[pt.lat, pt.lng])}
+              pathOptions={{ color: "lime", weight: 6, dashArray: "5 10" }}
+            />
+          }
+
+          {/* Первый маркер “чистый участок” с зеленой иконкой */}
+          {mode === "clean" && cleanPoints.length > 0 && (
+            <Marker position={[cleanPoints[0].lat, cleanPoints[0].lng]} icon={greenStartIcon}>
+              <Popup>Старт участка</Popup>
+            </Marker>
+          )}
+
+          {/* Маркеры ДПС */}
           {markers.map((marker: MarkerData) => (
             <Marker key={marker.key} position={[marker.lat, marker.lng]}>
               <Popup>
@@ -435,12 +582,14 @@ export default function App() {
                       }}
                       style={{
                         cursor: "pointer",
-                        padding: isMobile ? "5px 7px" : "3px 10px",
+                        padding: isMobile ? "7px 12px" : "8px 16px",
                         borderRadius: 6,
-                        border: "1px solid #aaa",
-                        background: "#e2f0d9",
-                        fontWeight: 'bold',
-                        fontSize: isMobile ? 14 : 16
+                        fontSize: isMobile ? 15 : 18,
+                        background: "#1976d2",
+                        color: "white",
+                        border: "none",
+                        fontWeight: "bold",
+                        marginRight: 8
                       }}
                     >✅ Подтвердить</button>
                   )}
@@ -452,7 +601,65 @@ export default function App() {
             </Marker>
           ))}
         </MapContainer>
-        {!!pendingLatLng && (
+        
+        {/* --- UI выбора --- */}
+        {mode === "choose" && firstClick && (
+          <div style={{
+            position: "fixed", left: "50%", top: "23%", zIndex: 1001,
+            transform: "translateX(-50%)", background: "#fff", borderRadius: 12,
+            padding: 18, boxShadow: "0 2px 12px #0001", display: "flex", flexDirection: "column", alignItems: "center"
+          }}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>Добавить:</div>
+            <button
+              style={{ ...unifiedButtonStyle, margin: "0 0 7px 0", background: "#ed4040" }}
+              onClick={() => { setMode("dps"); setPendingLatLng(firstClick); }}
+            >
+              Патруль ДПС
+            </button>
+            <button
+              style={{ ...greenButtonStyle, margin: "0 0 7px 0" }}
+              onClick={() => { setMode("clean"); setCleanPoints([firstClick]); }}
+            >
+              Чистый участок
+            </button>
+            <button
+              style={{ ...grayButtonStyle, margin: "5px 0 0 0", fontSize: 14 }}
+              onClick={handleCancel}
+            >
+              Отмена
+            </button>
+          </div>
+        )}
+
+        {/* --- UI добавления линии --- */}
+        {mode === "clean" && cleanPoints.length > 0 && (
+          <div style={{
+            position: "fixed", left: "50%", top: isMobile ? "8%" : "15%", zIndex: 1001,
+            transform: "translateX(-50%)", background: "#fff", borderRadius: 12,
+            padding: 18, boxShadow: "0 2px 12px #0001",
+            display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: "center", gap: 8
+          }}>
+            <div style={{marginBottom: isMobile ? 8 : 0}}>Точек: {cleanPoints.length}</div>
+            <button onClick={finishCleanLine} style={greenButtonStyle}>
+              Завершить участок
+            </button>
+            <button onClick={handleCancel} style={grayButtonStyle}>
+              Отмена
+            </button>
+          </div>
+        )}
+
+        {/* Подсказка для второй точки */}
+        {mode === "clean" && cleanPoints.length === 1 && (
+          <div
+            style={{
+              position: "fixed", left: "50%", top: isMobile ? "15%" : "25%", zIndex: 1002,
+              background: "#fff", borderRadius: 12, padding: 12, transform: "translateX(-50%)",
+              color: "#1976d2", fontWeight: 500
+            }}>Укажи конечную точку</div>
+        )}
+
+        {!!pendingLatLng && !mode?.startsWith('clean') && (
           <div
             style={{
               position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
