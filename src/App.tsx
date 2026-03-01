@@ -21,6 +21,7 @@ import {
   onDisconnect
 } from "firebase/database";
 import leoProfanity from "leo-profanity";
+import SplashScreen from "./SplashScreen";
 
 // --- Firebase config ---
 const firebaseConfig = {
@@ -39,10 +40,10 @@ const db = getDatabase(app);
 const markersRef = ref(db, "markers");
 
 // Лимиты
-const LIMIT = 3; // 3 метки
-const WINDOW = 10 * 60 * 1000; // 10 минут в мс
+const LIMIT = 3;
+const WINDOW = 10 * 60 * 1000;
 
-// Кастомизация marker-иконки, чтобы не было багов на vite+leaflet
+// Кастомизация marker-иконки
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -83,12 +84,6 @@ const tileLayers: Record<string, { url: string; attribution: string }> = {
   }
 };
 
-const headerFooterStyle: React.CSSProperties = {
-  textAlign: "center",
-  padding: "14px 0",
-  transition: "background 0.3s, color 0.3s"
-};
-
 function getMarkerTimes(userId: number): number[] {
   const data = localStorage.getItem('markerTimes-' + userId);
   return data ? JSON.parse(data) : [];
@@ -98,6 +93,12 @@ function setMarkerTimes(userId: number, times: number[]) {
 }
 
 export default function App() {
+  // Splash:
+  const [showSplash, setShowSplash] = useState(true);
+
+  // Мобильный флаг для адаптивных стилей
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 700;
+
   // Telegram Mini App интеграция:
   const [tgUser, setTgUser] = useState<any>(null);
 
@@ -272,6 +273,13 @@ export default function App() {
     setCommentInput("");
   };
 
+  const headerFooterStyle: React.CSSProperties = {
+    textAlign: "center",
+    padding: isMobile ? "10px 0" : "14px 0",
+    fontSize: isMobile ? 17 : 22,
+    transition: "background 0.3s, color 0.3s"
+  };
+
   // SVG ICONS
   const SunIcon = (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none"
@@ -304,13 +312,28 @@ export default function App() {
     if (!notify) return null;
     return (
       <div style={{
-        position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
-        background: "#222e", color: "#fff", padding: "16px 30px", borderRadius: 10,
-        fontWeight: "bold", fontSize: 18, zIndex: 1100, boxShadow: "0 6px 20px #0006",
+        position: 'fixed',
+        top: isMobile ? 8 : 20,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        background: "#222e",
+        color: "#fff",
+        padding: isMobile ? "10px 10px" : "16px 30px",
+        borderRadius: 10,
+        fontWeight: "bold",
+        fontSize: isMobile ? 15 : 18,
+        zIndex: 1100,
+        boxShadow: "0 6px 20px #0006",
         border: "2px solid #fff"
       }}>{notify}</div>
     );
   }
+
+  // ------ Splash ------
+  if (showSplash) {
+    return <SplashScreen onEnd={() => setShowSplash(false)} />;
+  }
+  // ------ Splash ------
 
   return (
     <>
@@ -330,47 +353,61 @@ export default function App() {
             ...headerFooterStyle,
             background: theme === "dark" ? "#222" : "#fff",
             color: theme === "dark" ? "#e0e0e0" : "#222",
-            fontWeight: "bold",
-            fontSize: 22
+            fontWeight: "bold"
           }}
         >
           Карта ДПС Воронеж
         </div>
-        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 14 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            marginBottom: isMobile ? 3 : 8,
+            gap: isMobile ? 8 : 14,
+            flexWrap: isMobile ? "wrap" : "nowrap"
+          }}>
           {tgUser &&
-            <span style={{ fontWeight: 'bold', color: "#1976d2" }}>
+            <span style={{ fontWeight: 'bold', color: "#1976d2", fontSize: isMobile ? 14 : 18 }}>
               👤 {tgUser.first_name || tgUser.username}
             </span>
           }
           <button
             onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             style={{
-              padding: "8px 18px",
+              padding: isMobile ? "6px 13px" : "8px 18px",
               borderRadius: 7,
               background: theme === "dark" ? "#333" : "#fff",
               color: theme === "dark" ? "#fff" : "#333",
               border: "1px solid #bbb",
               cursor: "pointer",
               fontWeight: "bold",
-              fontSize: 22,
+              fontSize: isMobile ? 18 : 22,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 2px 8px 0 rgba(0,0,0,.05)"
+              boxShadow: "0 2px 8px 0 rgba(0,0,0,.05)",
+              margin: isMobile ? "4px 0" : ""
             }}
             aria-label={theme === "dark" ? "Светлая карта" : "Тёмная карта"}
           >
             {theme === "dark" ? SunIcon : MoonIcon}
           </button>
-          <div style={{ minWidth: 78, marginLeft: 8, textAlign: "left", lineHeight: "1.1" }}>
-            <div style={{ color: "#aaa", fontSize: 13 }}>Всего: {usersCount}</div>
-            <div style={{ color: "#27ae60", fontWeight: "bold", fontSize: 15 }}>Онлайн: {onlineCount}</div>
+          <div style={{ minWidth: 60, marginLeft: 8, textAlign: "left", lineHeight: "1.1", fontSize: isMobile ? 13 : 15 }}>
+            <div style={{ color: "#aaa", fontSize: isMobile ? 11 : 13 }}>Всего: {usersCount}</div>
+            <div style={{ color: "#27ae60", fontWeight: "bold" }}>Онлайн: {onlineCount}</div>
           </div>
         </div>
         <MapContainer
           center={[51.661535, 39.200287] as [number, number]}
           zoom={12}
-          style={{ height: "80vh", width: "100%" }}
+          style={{
+            width: "100vw",
+            maxWidth: "100vw",
+            height: isMobile ? "62vh" : "80vh",
+            minHeight: 260,
+            maxHeight: isMobile ? "73vh" : "81vh",
+          }}
         >
           <TileLayer
             url={tileLayers[theme].url}
@@ -387,7 +424,7 @@ export default function App() {
                 </small>
                 <div style={{ marginTop: 8 }}>
                   {tgUser && marker.confirmedBy?.[tgUser.id] ? (
-                    <span style={{ color: 'green', fontWeight: 'bold' }}>
+                    <span style={{ color: 'green', fontWeight: 'bold', fontSize: isMobile ? 15 : 16 }}>
                       Вы уже подтвердили 👍
                     </span>
                   ) : (
@@ -398,15 +435,16 @@ export default function App() {
                       }}
                       style={{
                         cursor: "pointer",
-                        padding: "3px 10px",
+                        padding: isMobile ? "5px 7px" : "3px 10px",
                         borderRadius: 6,
                         border: "1px solid #aaa",
                         background: "#e2f0d9",
-                        fontWeight: 'bold'
+                        fontWeight: 'bold',
+                        fontSize: isMobile ? 14 : 16
                       }}
                     >✅ Подтвердить</button>
                   )}
-                  <span style={{ marginLeft: 10, fontWeight: 'bold', color: "#1976d2" }}>
+                  <span style={{ marginLeft: 10, fontWeight: 'bold', color: "#1976d2", fontSize: isMobile ? 14 : 15 }}>
                     {marker.confirmCount}
                   </span>
                 </div>
@@ -426,20 +464,22 @@ export default function App() {
             <div
               style={{
                 background: "white",
-                padding: 24,
+                padding: isMobile ? 12 : 24,
                 borderRadius: 10,
-                minWidth: 270,
+                width: isMobile ? "94vw" : 270,
+                minWidth: isMobile ? "unset" : 270,
                 textAlign: "center"
               }}
               onClick={e => e.stopPropagation()}
             >
-              <div style={{ fontWeight: "bold", fontSize: 16, marginBottom: 10 }}>
+              <div style={{ fontWeight: "bold", fontSize: isMobile ? 15 : 16, marginBottom: 10 }}>
                 Введите комментарий
               </div>
               <input
                 style={{
-                  width: "95%",
-                  padding: 8,
+                  width: "94%",
+                  fontSize: isMobile ? 15 : 18,
+                  padding: isMobile ? 7 : 8,
                   marginTop: 8,
                   borderRadius: 6,
                   border: "1px solid #ccc"
@@ -456,12 +496,14 @@ export default function App() {
                   disabled={!commentInput.trim()}
                   style={{
                     marginRight: 8,
-                    padding: "8px 16px",
+                    padding: isMobile ? "7px 12px" : "8px 16px",
                     borderRadius: 6,
+                    fontSize: isMobile ? 15 : 18,
                     background: "#1976d2",
                     color: "white",
                     border: "none",
-                    cursor: !commentInput.trim() ? "not-allowed" : "pointer"
+                    cursor: !commentInput.trim() ? "not-allowed" : "pointer",
+                    marginBottom: 8
                   }}
                 >
                   Добавить
@@ -469,12 +511,14 @@ export default function App() {
                 <button
                   onClick={handleCancel}
                   style={{
-                    padding: "8px 16px",
+                    padding: isMobile ? "7px 12px" : "8px 16px",
                     borderRadius: 6,
+                    fontSize: isMobile ? 15 : 18,
                     background: "#e0e0e0",
                     color: "#333",
                     border: "none",
-                    cursor: "pointer"
+                    cursor: "pointer",
+                    marginBottom: 8
                   }}
                 >
                   Отмена
@@ -487,9 +531,9 @@ export default function App() {
           style={{
             ...headerFooterStyle,
             fontWeight: "normal",
-            fontSize: 15,
             background: theme === "dark" ? "#222" : "#fff",
-            color: theme === "dark" ? "#e0e0e0" : "#222"
+            color: theme === "dark" ? "#e0e0e0" : "#222",
+            fontSize: isMobile ? 13 : 15
           }}
         >
           Кликните по карте, чтобы добавить метку (лимит: 3 метки на 10 минут). <br />
