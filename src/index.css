@@ -32,3 +32,29 @@ h1 {
 h2 {
   font-size: 20px !important;
 }
+/* Адаптив для мобильных можно оставить как есть */
+
+html, body, #root {
+  height: 100% !important;
+  min-height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body {
+  overflow: hidden !important;
+  background: #fff !important;
+}
+
+#root {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+}
+
+.leaflet-container {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
