@@ -23,16 +23,15 @@ import {
 import leoProfanity from "leo-profanity";
 import SplashScreen from "./SplashScreen";
 
-// --- Firebase config ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAlxzHxukmQx4icJ899NOkmNPauhBfz-fo",
-  authDomain: "dpsvrn-3ac57.firebaseapp.com",
-  projectId: "dpsvrn-3ac57",
-  storageBucket: "dpsvrn-3ac57.appspot.com",
-  messagingSenderId: "319289269956",
-  appId: "1:319289269956:web:c3320e215f17cda6faf391",
-  measurementId: "G-WC95E4Z86S",
-  databaseURL: "https://dpsvrn-3ac57-default-rtdb.firebaseio.com/"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL
 };
 
 const app = initializeApp(firebaseConfig);
