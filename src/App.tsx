@@ -39,6 +39,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const markersRef = ref(db, "markers");
+const cleanLinesRef = ref(db, "cleanLines");
 
 // Лимиты
 const LIMIT = 3;
@@ -83,9 +84,9 @@ type PolylineData = {
   createdBy: number;
   creatorName: string;
   timestamp: number;
+  key?: string;
 };
 
-// --- СТИЛИ КНОПОК (единый вид) ---
 const unifiedButtonStyle: React.CSSProperties = {
   margin: "0 8px 0 0",
   padding: "8px 16px",
@@ -112,7 +113,6 @@ const grayButtonStyle = {
   color: "#222",
 };
 
-// --- Вспом. функции для линий ---
 function getDistance(lat1:number, lng1:number, lat2:number, lng2:number) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
@@ -166,11 +166,7 @@ function setMarkerTimes(userId: number, times: number[]) {
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 700;
-
-  // Telegram Mini App интеграция:
   const [tgUser, setTgUser] = useState<any>(null);
-
-  // --- USERS & ONLINE COUNTS
   const [usersCount, setUsersCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
 
@@ -222,14 +218,12 @@ export default function App() {
     leoProfanity.loadDictionary('ru');
   }, []);
 
-  // Firebase маркеры
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [pendingLatLng, setPendingLatLng] = useState<{ lat: number; lng: number } | null>(null);
   const [commentInput, setCommentInput] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [notify, setNotify] = useState<string | null>(null);
 
-  // Polyline ЧИСТЫЙ УЧАСТОК
   const [mode, setMode] = useState<null | "choose" | "dps" | "clean">(null);
   const [firstClick, setFirstClick] = useState<{lat: number; lng: number} | null>(null);
   const [cleanPoints, setCleanPoints] = useState<{lat: number, lng: number}[]>([]);
@@ -246,10 +240,10 @@ export default function App() {
       );
       setMarkers(result);
 
-      // автоматическое удаление старых меток (старше 2 часов)
+      // автоматическое удаление старых меток (старше 1 часа)
       const now = Date.now();
       for (const [key, value] of Object.entries(dbMarkers)) {
-        if (now - (value as any).timestamp > 2 * 60 * 60 * 1000) {
+        if (now - (value as any).timestamp > 60 * 60 * 1000) {
           remove(ref(db, `markers/${key}`));
         }
       }
@@ -260,10 +254,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setPolylines(prev => prev.filter(line => !isLineExpired(line)));
-    }, 60000);
-    return () => clearInterval(interval);
+    const handle = onValue(cleanLinesRef, (snapshot: any) => {
+      const dbLines = (snapshot.val() as any) || {};
+      const linesArr: PolylineData[] = Object.entries(dbLines).map(([key, value]: [string, any]) => ({
+        ...(value as PolylineData),
+        key
+      }));
+
+      // удаление просроченных линий (старше 1 часа)
+      const now = Date.now();
+      Object.entries(dbLines).forEach(([key, value]: [string, any]) => {
+        if (now - value.timestamp > 60 * 60 * 1000) {
+          remove(ref(db, `cleanLines/${key}`));
+        }
+      });
+
+      setPolylines(linesArr.filter(line => !isLineExpired(line)));
+    });
+    return () => { off(cleanLinesRef, 'value', handle); };
   }, []);
 
   const showNotify = (msg: string) => {
@@ -372,16 +380,15 @@ export default function App() {
       showNotify("Укажите хотя бы 2 точки");
       return;
     }
-    setPolylines(prev => [
-      ...prev,
-      {
-        points: cleanPoints,
-        time: new Date().toLocaleTimeString(),
-        createdBy: tgUser.id,
-        creatorName: tgUser.first_name,
-        timestamp: Date.now()
-      }
-    ]);
+    const newPolyline = {
+      points: cleanPoints,
+      time: new Date().toLocaleTimeString(),
+      createdBy: tgUser.id,
+      creatorName: tgUser.first_name,
+      timestamp: Date.now()
+    };
+    push(cleanLinesRef, newPolyline);
+
     setCleanPoints([]);
     setMode(null);
     setFirstClick(null);
@@ -394,7 +401,6 @@ export default function App() {
     transition: "background 0.3s, color 0.3s"
   };
 
-  // SVG ICONS
   const SunIcon = (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none"
       xmlns="http://www.w3.org/2000/svg">
@@ -527,33 +533,48 @@ export default function App() {
           />
           <MapClickHandler onMapClick={handleMapClick} />
 
-          {/* Чистые участки (фильтрация автоматически скрывает старые и с DПС) */}
+          {/* Чистые участки (теперь в 2 раза тоньше) */}
           {polylines
             .filter(line => !isLineExpired(line))
             .filter(line => !isPatrolNearLine(line, markers))
             .map((line, i) => (
               <RLPolyline
-                key={i}
+                key={line.key || i}
                 positions={line.points.map(pt => [pt.lat, pt.lng])}
-                pathOptions={{ color: "green", weight: 8, opacity: 0.65 }}
+                pathOptions={{ color: "green", weight: 4, opacity: 0.65 }} // стало 4!
               >
                 <Popup>
                   Чистый участок<br />
                   <small>Отправил: {line.creatorName}</small><br />
                   <small>Время: {line.time}</small>
+                  {tgUser && line.createdBy === tgUser.id && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        remove(ref(db, `cleanLines/${line.key}`));
+                        showNotify("Участок удалён");
+                      }}
+                      style={{
+                        ...grayButtonStyle,
+                        marginTop: 6, marginLeft: 0,
+                        fontSize: isMobile ? 13 : 15,
+                        background: "#ed4040",
+                        color: "#fff"
+                      }}
+                    >🗑 Удалить</button>
+                  )}
                 </Popup>
               </RLPolyline>
           ))}
 
-          {/* Текущая линия при добавлении */}
+          {/* Текущая линия при добавлении (тоже тоньше) */}
           {mode === "clean" && cleanPoints.length > 0 &&
             <RLPolyline
               positions={cleanPoints.map(pt=>[pt.lat, pt.lng])}
-              pathOptions={{ color: "lime", weight: 6, dashArray: "5 10" }}
+              pathOptions={{ color: "lime", weight: 3, dashArray: "5 10" }} // стало 3!
             />
           }
 
-          {/* Первый маркер “чистый участок” с зеленой иконкой */}
           {mode === "clean" && cleanPoints.length > 0 && (
             <Marker position={[cleanPoints[0].lat, cleanPoints[0].lng]} icon={greenStartIcon}>
               <Popup>Старт участка</Popup>
@@ -596,6 +617,22 @@ export default function App() {
                   <span style={{ marginLeft: 10, fontWeight: 'bold', color: "#1976d2", fontSize: isMobile ? 14 : 15 }}>
                     {marker.confirmCount}
                   </span>
+                  {tgUser && marker.createdBy === tgUser.id && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        remove(ref(db, `markers/${marker.key}`));
+                        showNotify("Метка удалена");
+                      }}
+                      style={{
+                        ...grayButtonStyle,
+                        marginTop: 8, marginLeft: 0,
+                        fontSize: isMobile ? 13 : 15,
+                        background: "#ed4040",
+                        color: "#fff"
+                      }}
+                    >🗑 Удалить</button>
+                  )}
                 </div>
               </Popup>
             </Marker>
@@ -631,7 +668,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- UI добавления линии --- */}
         {mode === "clean" && cleanPoints.length > 0 && (
           <div style={{
             position: "fixed", left: "50%", top: isMobile ? "8%" : "15%", zIndex: 1001,
@@ -649,7 +685,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Подсказка для второй точки */}
         {mode === "clean" && cleanPoints.length === 1 && (
           <div
             style={{
